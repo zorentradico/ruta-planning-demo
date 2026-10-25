@@ -6,10 +6,11 @@ Demo de planificación internacional de mercancías por carretera para cinco con
 
 - Elige día, semana o mes; filtra por camión o conductor.
 - Cada fila representa un camión. Los colores separan conducción, otros trabajos, pausas y disponibilidad. La anchura representa el tiempo previsto.
-- Con ratón, arrastra un servicio para cambiar su inicio o pasarlo a otro camión. Conserva su conductor. El ajuste es de 15 minutos en día y de una hora en semana/mes.
-- Arrastra el borde derecho para ajustar el último tramo de conducción. Las pausas y otros trabajos conservan su duración. «Deshacer» revierte el último arrastre; otra edición cancela esa posibilidad.
-- Pulsa un servicio para editar conductor, camión, fecha y actividades con precisión. Esta es también la edición disponible en móvil; desliza la línea temporal para recorrerla.
-- Declara los descansos por separado en «Conductores». Mover un servicio no mueve automáticamente sus descansos; cualquier solapamiento genera aviso.
+- Con ratón, arrastra cada tramo de conducción, pausa, otros trabajos o disponibilidad para cambiar solo su inicio. El ajuste visual es de 15 minutos. Camión y conductor se cambian desde el formulario del servicio.
+- Arrastra el borde derecho de un tramo para ajustar solo su duración. Los otros intervalos mantienen sus horas; los huecos y solapamientos se señalan. «Deshacer» revierte el último arrastre; otra edición cancela esa posibilidad.
+- Mantén Mayús (Shift) mientras arrastras para mover todos los intervalos conectados del conductor. El grupo puede atravesar medianoche y varios servicios. Se corta ante un hueco o descanso diario/semanal de 9 h o más; no se define por el día del calendario.
+- Pulsa un servicio para editar conductor, camión, fecha y actividades con precisión. Cada actividad dispone de deslizador de duración en pasos de 15 minutos y campos numéricos con precisión de un minuto para su duración y desplazamiento desde la salida. Esta es también la edición disponible en móvil; desliza la línea temporal para recorrerla.
+- Los descansos tienen una línea temporal propia por conductor: arrástralos en pasos de 15 minutos o ajusta su borde derecho cuando el final sea visible. Su editor incluye deslizador y duración numérica exacta. Un descanso diario no bloquea el camión ni se desplaza automáticamente al mover la jornada; los conflictos se avisan.
 - Los cambios se guardan en el navegador. Exporta/importa una copia JSON para transferirlos. No hay cuentas, servidor de datos ni sincronización entre dispositivos.
 
 ## Alcance de las comprobaciones
@@ -46,4 +47,4 @@ Para GitHub Pages: publicar la rama `main`, carpeta raíz. Todos los recursos de
 
 ## Verificación
 
-26 pruebas automáticas de datos, reglas, límites temporales, cambio de hora y arrastre/redimensionado. Comprobaciones de navegador: edición y persistencia, filtros, desplazamiento de una hora, ajuste de 30 minutos, cambio de camión y deshacer. Revisado en tamaños de escritorio y móvil; pendiente prueba en dispositivos físicos y auditoría de accesibilidad completa.
+34 pruebas automáticas de datos, reglas, límites temporales, cambio de hora y edición independiente de intervalos. Incluyen movimiento de jornadas conectadas entre servicios a través de medianoche, separación ante huecos/descansos y pausas solapadas que no reinician conducción. Comprobaciones de navegador: edición y persistencia, filtros, arrastre de un tramo y descanso en 15 minutos, deslizadores, valores exactos de 277 y 862 minutos y deshacer. Revisado en tamaños de escritorio y móvil; pendiente prueba de Mayús con teclado físico, dispositivos físicos y auditoría de accesibilidad completa.

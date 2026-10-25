@@ -15,10 +15,31 @@ export function addDays(day,n){return new Date(Date.parse(day+'T12:00:00Z')+n*86
 export function monday(day){const dow=new Date(day+'T12:00Z').getUTCDay();return addDays(day,-((dow+6)%7));}
 export function duration(a,b){return (Date.parse(b)-Date.parse(a))/MINUTE;}
 export function fmt(minutes){const m=Math.round(minutes);return `${Math.floor(m/60)} h${m%60?' '+String(m%60).padStart(2,'0')+' min':''}`;}
-export function endOf(s){return new Date(Date.parse(s.start)+s.activities.reduce((n,a)=>n+a.minutes,0)*MINUTE).toISOString();}
+export function layout(s){let cursor=0;return s.activities.map((a,index)=>{const offset=a.offset??cursor;cursor=offset+a.minutes;return {...a,index,offset,start:new Date(Date.parse(s.start)+offset*MINUTE).toISOString(),end:new Date(Date.parse(s.start)+cursor*MINUTE).toISOString()};});}
+export function endOf(s){return new Date(Math.max(...layout(s).map(a=>Date.parse(a.end)))).toISOString();}
+export function normalizeService(s){const acts=layout(s),first=Math.min(...acts.map(a=>a.offset));return {...s,start:new Date(Date.parse(s.start)+first*MINUTE).toISOString(),activities:acts.map(({type,minutes,offset})=>({type,minutes,offset:offset-first}))};}
 export function driving(s){return s.activities.filter(a=>a.type==='drive').reduce((n,a)=>n+a.minutes,0);}
 export function overlap(a,b){return Date.parse(a.start)<Date.parse(b.end)&&Date.parse(b.start)<Date.parse(a.end);}
-export function activitiesOf(services){return services.flatMap(s=>{let t=Date.parse(s.start);return s.activities.map((a,i)=>{const start=new Date(t).toISOString();t+=a.minutes*MINUTE;return {...a,start,end:new Date(t).toISOString(),driverId:s.driverId,truckId:s.truckId,serviceId:s.id,id:s.id+'-'+i};});});}
+export function activitiesOf(services){return services.flatMap(s=>layout(s).map(a=>({...a,driverId:s.driverId,truckId:s.truckId,serviceId:s.id,id:s.id+'-'+a.index})));}
+// Only touching intervals are linked. Midnight does not split a duty; daily/weekly rest does.
+export function editInterval(state,target,delta,resize=false,linked=false){
+ if(!Number.isInteger(delta))throw Error('Desplazamiento no válido.');
+ const next=structuredClone(state),service=next.services.find(s=>s.id===target.serviceId),rest=next.rests.find(r=>r.id===target.restId);
+ const selected=rest?{...rest,restId:rest.id}:service?{...layout(service)[target.index],serviceId:service.id,driverId:service.driverId}:null;
+ if(!selected||!selected.start)throw Error('Tramo no encontrado.');
+ if(resize){if(rest){rest.end=new Date(Date.parse(rest.end)+delta*MINUTE).toISOString();if(duration(rest.start,rest.end)<1)throw Error('El descanso debe durar al menos un minuto.');}
+ else{service.activities=layout(service).map(a=>({type:a.type,minutes:a.minutes+(a.index===target.index?delta:0),offset:a.offset}));if(service.activities.some(a=>a.minutes<1||a.minutes>1440))throw Error('Cada tramo debe durar entre 1 y 1440 minutos.');}return validateState(next);}
+ let members=[selected];
+ if(linked&&(!rest||duration(rest.start,rest.end)<540)){
+  const candidates=[...activitiesOf(next.services.filter(s=>s.driverId===selected.driverId)),...next.rests.filter(r=>r.driverId===selected.driverId&&duration(r.start,r.end)<540).map(r=>({...r,restId:r.id}))];
+  let begin=Date.parse(selected.start),end=Date.parse(selected.end),changed=true;
+  while(changed){changed=false;for(const a of candidates){const lo=Date.parse(a.start),hi=Date.parse(a.end);if(lo<=end&&hi>=begin&&(lo<begin||hi>end)){begin=Math.min(begin,lo);end=Math.max(end,hi);changed=true;}}}
+  members=candidates.filter(a=>Date.parse(a.start)<=end&&Date.parse(a.end)>=begin);
+ }
+ for(const s of next.services){const indexes=new Set(members.filter(a=>a.serviceId===s.id).map(a=>a.index));if(!indexes.size)continue;s.activities=layout(s).map(a=>({type:a.type,minutes:a.minutes,offset:a.offset+(indexes.has(a.index)?delta:0)}));Object.assign(s,normalizeService(s));}
+ for(const r of next.rests)if(members.some(a=>a.restId===r.id)){r.start=new Date(Date.parse(r.start)+delta*MINUTE).toISOString();r.end=new Date(Date.parse(r.end)+delta*MINUTE).toISOString();}
+ return validateState(next);
+}
 export function weekMinutes(state,driverId,week){
  const start=Date.parse(instant(week+'T00:00')),end=Date.parse(instant(addDays(week,7)+'T00:00'));
  const summary=state.baselines.find(b=>b.driverId===driverId&&b.week===week);
@@ -45,7 +66,7 @@ export function validateState(state){
  if(new Set(state.drivers.map(x=>x.id)).size!==5||new Set(state.trucks.map(x=>x.id)).size!==4)throw Error('Identificadores duplicados.');
  const validDate=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(v)&&Number.isFinite(Date.parse(v));
  for(const s of state.services){
-  if(!validId(s.id)||ids.has(s.id)||!state.drivers.some(d=>d.id===s.driverId)||!state.trucks.some(t=>t.id===s.truckId)||!text(s.route)||!validDate(s.start)||!Array.isArray(s.activities)||s.activities.length<1||s.activities.length>50||!s.activities.every(a=>Object.hasOwn(TYPES,a.type)&&Number.isInteger(a.minutes)&&a.minutes>=1&&a.minutes<=1440)||s.activities.reduce((n,a)=>n+a.minutes,0)>4320)throw Error('Servicio no válido.');ids.add(s.id);
+  if(!validId(s.id)||ids.has(s.id)||!state.drivers.some(d=>d.id===s.driverId)||!state.trucks.some(t=>t.id===s.truckId)||!text(s.route)||!validDate(s.start)||!Array.isArray(s.activities)||s.activities.length<1||s.activities.length>50||!s.activities.every(a=>Object.hasOwn(TYPES,a.type)&&Number.isInteger(a.minutes)&&a.minutes>=1&&a.minutes<=1440&&(a.offset===undefined||(Number.isInteger(a.offset)&&a.offset>=0&&a.offset<=4320)))||s.activities.reduce((n,a)=>n+a.minutes,0)>4320||duration(s.start,endOf(s))>4320)throw Error('Servicio no válido.');ids.add(s.id);
  }
  for(const r of state.rests){if(!validId(r.id)||ids.has(r.id)||!state.drivers.some(d=>d.id===r.driverId)||!validDate(r.start)||!validDate(r.end)||duration(r.start,r.end)<=0||duration(r.start,r.end)>20160||!['daily','weekly'].includes(r.kind)||!text(r.country,40)||!['hotel','home','cab','unknown'].includes(r.accommodation))throw Error('Descanso no válido.');ids.add(r.id);}
  for(const b of state.baselines){if(!state.drivers.some(d=>d.id===b.driverId)||!/^\d{4}-\d{2}-\d{2}$/.test(b.week)||monday(b.week)!==b.week||!Number.isFinite(b.minutes)||b.minutes<0||b.minutes>10080)throw Error('Histórico no válido.');}
@@ -57,6 +78,9 @@ export function analyse(state,referenceDay){
  const issues=[],obligations=[];const now=Date.parse(instant(referenceDay+'T00:00'));
  const push=(code,severity,driverId,title,detail,serviceIds=[],when=null)=>issues.push({id:[code,driverId,...serviceIds,when||''].join(':'),code,severity,driverId,title,detail,serviceIds,when});
  const services=state.services.map(s=>({...s,end:endOf(s)}));
+ for(const s of services){const acts=layout(s).sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));let end=Date.parse(s.start);
+  for(let i=0;i<acts.length;i++){const a=acts[i];if(Date.parse(a.start)>end)push('activity-gap','unknown',s.driverId,'Hueco sin actividad declarada','El intervalo vacío no se considera descanso. Completa o revisa la jornada.',[s.id],a.start);if(i&&Date.parse(a.start)<end)push('activity-overlap','error',s.driverId,'Actividades del servicio solapadas','Dos tramos de la misma jornada coinciden. Ajusta sus horas o duraciones.',[s.id],a.start);end=Math.max(end,Date.parse(a.end));}
+ }
  for(let i=0;i<services.length;i++)for(let j=i+1;j<services.length;j++){const a=services[i],b=services[j];if(!overlap(a,b))continue;
   if(a.driverId===b.driverId)push('driver-overlap','error',a.driverId,'Conductor asignado a la vez',`${a.route} coincide con ${b.route}.`,[a.id,b.id],a.start);
   if(a.truckId===b.truckId)push('truck-overlap','error',a.driverId,'Camión ocupado por dos servicios',`${state.trucks.find(t=>t.id===a.truckId).plate}: hay una doble reserva.`,[a.id,b.id],a.start);
@@ -95,7 +119,7 @@ export function analyse(state,referenceDay){
   for(const a of acts){
    if(previousEnd&&normalRests.some(r=>Date.parse(r.start)>=previousEnd&&Date.parse(r.end)<=Date.parse(a.start))){accumulated=0;partial=false;reported=false;}
    if(a.type==='drive'){accumulated+=a.minutes;if(accumulated>270&&!reported){push('driving-break','error',driver.id,'Conducción sin pausa suficiente',`${fmt(accumulated)} acumuladas. Se requiere una pausa válida de 45 min o la secuencia 15 + 30 min.`,[a.serviceId],a.start);reported=true;}}
-   if(a.type==='break'){if(a.minutes>=45||(partial&&a.minutes>=30)){accumulated=0;partial=false;reported=false;}else if(a.minutes>=15)partial=true;}
+   if(a.type==='break'&&!acts.some(other=>other.id!==a.id&&overlap(a,other))){if(a.minutes>=45||(partial&&a.minutes>=30)){accumulated=0;partial=false;reported=false;}else if(a.minutes>=15)partial=true;}
    previousEnd=Date.parse(a.end);
   }
   const weeks=new Set([monday(referenceDay),...acts.map(a=>monday(local(a.start).slice(0,10))),...acts.map(a=>monday(local(a.end).slice(0,10)))]);
